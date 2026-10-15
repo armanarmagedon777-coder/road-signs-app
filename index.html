@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карта дорожных знаков Астаны</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #header {
+            height: 60px;
+            background-color: #2c3e50;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        #map { height: calc(100vh - 60px); width: 100%; }
+        .auth-status { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        .btn-login { background-color: #27ae60; color: white; }
+        .btn-logout { background-color: #e74c3c; color: white; }
+        .btn-primary { background-color: #3498db; color: white; margin-top: 5px; }
+        .btn-danger { background-color: #e74c3c; color: white; }
+        
+        .leaflet-popup-content form {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 220px;
+        }
+        .leaflet-popup-content label {
+            font-weight: bold;
+            font-size: 13px;
+        }
+        .leaflet-popup-content select, 
+        .leaflet-popup-content textarea {
+            padding: 6px;
+            font-size: 14px;
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .modal-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;
+        }
+        .modal-box {
+            background: white; padding: 25px; border-radius: 8px; width: 300px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3); display: flex; flex-direction: column; gap: 12px;
+        }
+        .modal-box input, .modal-box select { padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; }
+        .btn-group { display: flex; gap: 5px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div id="header">
+        <span>Карта знаков Астана</span>
+        <div class="auth-status">
+            <span id="userRoleBadge">Режим: Гость</span>
+            <button id="authBtn" class="btn btn-login" onclick="openLoginModal()">Войти / Сменить роль</button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div id="loginModal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 style="margin:0 0 10px 0;">Выбор роли</h3>
+            <label>Роль в системе:</label>
+            <select id="loginRole" onchange="togglePasswordVisibility()">
+                <option value="viewer">Гость (Только просмотр)</option>
+                <option value="editor">Редактор (Добавление/Изменение)</option>
+                <option value="admin">Администратор (Полный доступ)</option>
+            </select>
+            <div id="passwordContainer" style="display: none;">
+                <label>Пароль:</label>
+                <input type="password" id="loginPassword" placeholder="Введите пароль (123456)" />
+            </div>
+            <button class="btn btn-login" onclick="performLogin()">Применить</button>
+            <button class="btn btn-logout" onclick="closeLoginModal()">Отмена</button>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        const map = L.map('map').setView([51.1694, 71.4491], 14);
+
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri'
+        }).addTo(map);
+
+        let currentUserRole = 'viewer';
+        localStorage.setItem('userRole', 'viewer');
+
+        let signTypesList = [];
+        let markersLayer = L.layerGroup().addTo(map);
+
+        function updateAuthUI() {
+            const badge = document.getElementById('userRoleBadge');
+            if (currentUserRole === 'viewer') badge.innerText = 'Режим: Гость';
+            else if (currentUserRole === 'editor') badge.innerText = 'Режим: Редактор';
+            else if (currentUserRole === 'admin') badge.innerText = 'Режим: Администратор';
+        }
+
+        function togglePasswordVisibility() {
+            const role = document.getElementById('loginRole').value;
+            const pwdContainer = document.getElementById('passwordContainer');
+            if (role === 'viewer') {
+                pwdContainer.style.display = 'none';
+            } else {
+                pwdContainer.style.display = 'flex';
+                pwdContainer.style.flexDirection = 'column';
+                pwdContainer.style.gap = '6px';
+            }
+        }
+
+        function openLoginModal() { 
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('loginRole').value = currentUserRole;
+            togglePasswordVisibility();
+            document.getElementById('loginModal').style.display = 'flex'; 
+        }
+
+        function closeLoginModal() { 
+            document.getElementById('loginPassword').value = '';
+            document.getElementById('loginModal').style.display = 'none'; 
+        }
+
+        async function performLogin() {
+            const role = document.getElementById('loginRole').value;
+            const password = document.getElementById('loginPassword').value;
+
+            map.closePopup();
+
+            if (role === 'viewer') {
+                currentUserRole = 'viewer';
+                localStorage.setItem('userRole', 'viewer');
+                updateAuthUI();
+                closeLoginModal();
+                loadSigns();
+                alert('Переключено в режим Гостя');
+                return;
+            }
+
+            try {
+                const res = await fetch('http://localhost:5000/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ role, password })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    currentUserRole = role;
+                    localStorage.setItem('userRole', role);
+                    updateAuthUI();
+                    closeLoginModal();
+                    loadSigns();
+                    alert('Успешный вход!');
+                } else {
+                    alert('Ошибка: ' + (data.error || 'Неверный пароль'));
+                    document.getElementById('loginPassword').value = '';
+                }
+            } catch (err) {
+                console.error('Ошибка входа:', err);
+                alert('Ошибка соединения с сервером.');
+            }
+        }
+
+        async function fetchSignTypes() {
+            try {
+                const res = await fetch('http://localhost:5000/api/sign-types');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data && data.length > 0) {
+                        // Сортировка знаков по возрастанию кодов (например, 1.1, 1.2, 2.1, 2.4 ...)
+                        data.sort((a, b) => {
+                            return a.code.localeCompare(b.code, undefined, { numeric: true });
+                        });
+                        signTypesList = data;
+                    }
+                }
+            } catch (err) {
+                console.warn('Не удалось загрузить типы знаков с сервера');
+            }
+        }
+
+        async function loadSigns() {
+            try {
+                markersLayer.clearLayers();
+                const response = await fetch('http://localhost:5000/api/signs');
+                if (!response.ok) return;
+                
+                const signs = await response.json();
+
+                signs.forEach(sign => {
+                    let marker;
+                    
+                    if (sign.image_url && sign.image_url.trim() !== '') {
+                        const signIcon = L.icon({
+                            iconUrl: sign.image_url,
+                            iconSize: [32, 32],
+                            iconAnchor: [16, 16],
+                            popupAnchor: [0, -16]
+                        });
+                        marker = L.marker([sign.latitude, sign.longitude], { icon: signIcon });
+                    } else {
+                        marker = L.marker([sign.latitude, sign.longitude]);
+                    }
+
+                    let buttonsHtml = '';
+
+                    if (currentUserRole === 'admin') {
+                        buttonsHtml = `
+                            <div class="btn-group">
+                                <button class="btn btn-primary" onclick="openEditForm(${sign.id}, ${sign.sign_type_id}, ${sign.latitude}, ${sign.longitude}, '${sign.description || ''}')">Изменить</button>
+                                <button class="btn btn-danger" onclick="deleteSign(${sign.id})">Удалить</button>
+                            </div>
+                        `;
+                    } else if (currentUserRole === 'editor') {
+                        buttonsHtml = `
+                            <div class="btn-group">
+                                <button class="btn btn-primary" onclick="openEditForm(${sign.id}, ${sign.sign_type_id}, ${sign.latitude}, ${sign.longitude}, '${sign.description || ''}')">Изменить</button>
+                            </div>
+                        `;
+                    }
+
+                    const imgTag = sign.image_url ? `<div style="text-align:center; margin: 5px 0;"><img src="${sign.image_url}" width="40"></div>` : '';
+
+                    marker.bindPopup(`
+                        <div>
+                            <h3>Знак: ${sign.sign_code || 'N/A'}</h3>
+                            ${imgTag}
+                            <p><b>Название:</b> ${sign.sign_name || 'Без названия'}</p>
+                            <p><b>Описание:</b> ${sign.description || 'Нет описания'}</p>
+                            ${buttonsHtml}
+                        </div>
+                    `);
+
+                    markersLayer.addLayer(marker);
+                });
+            } catch (err) {
+                console.error('Ошибка загрузки знаков:', err);
+            }
+        }
+
+        // Клик по карте для добавления знака с каскадным выбором категории
+        map.on('click', async function(e) {
+            if (currentUserRole === 'viewer') {
+                alert('Режим гостя: добавление знаков недоступно. Войдите как Редактор или Администратор.');
+                return;
+            }
+
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            if (!signTypesList || signTypesList.length === 0) {
+                await fetchSignTypes();
+            }
+
+            const categories = [...new Set(signTypesList.map(st => st.category_name || 'Разное'))];
+            let categoryOptions = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+            
+            const firstCategory = categories[0];
+            const filteredSigns = signTypesList.filter(st => (st.category_name || 'Разное') === firstCategory);
+            let signOptions = filteredSigns.map(st => `<option value="${st.id}">${st.code} - ${st.name}</option>`).join('');
+
+            const popupContent = `
+                <form id="addSignForm">
+                    <h3>Добавить знак</h3>
+                    <label>Вид (категория) знака:</label>
+                    <select id="signCategorySelect" onchange="updateSignTypesDropdown()">${categoryOptions}</select>
+                    
+                    <label>Конкретный знак:</label>
+                    <select id="signTypeId">${signOptions}</select>
+                    
+                    <label>Описание:</label>
+                    <textarea id="signDesc" placeholder="Например: у столба"></textarea>
+                    <button type="button" class="btn btn-primary" onclick="saveNewSign(${lat}, ${lng})">Сохранить</button>
+                </form>
+            `;
+
+            L.popup().setLatLng([lat, lng]).setContent(popupContent).openOn(map);
+        });
+
+        window.updateSignTypesDropdown = function() {
+            const selectedCat = document.getElementById('signCategorySelect').value;
+            const signSelect = document.getElementById('signTypeId');
+            
+            const filteredSigns = signTypesList.filter(st => (st.category_name || 'Разное') === selectedCat);
+            signSelect.innerHTML = filteredSigns.map(st => `<option value="${st.id}">${st.code} - ${st.name}</option>`).join('');
+        };
+
+        window.saveNewSign = async function(lat, lng) {
+            const sign_type_id = parseInt(document.getElementById('signTypeId').value);
+            const description = document.getElementById('signDesc').value;
+
+            try {
+                const response = await fetch('http://localhost:5000/api/signs', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json', 
+                        'x-user-role': currentUserRole 
+                    },
+                    body: JSON.stringify({ 
+                        sign_type_id: sign_type_id, 
+                        latitude: parseFloat(lat), 
+                        longitude: parseFloat(lng), 
+                        description: description 
+                    })
+                });
+
+                if (response.ok) {
+                    alert('Знак успешно добавлен!');
+                    map.closePopup();
+                    loadSigns();
+                } else {
+                    const errData = await response.json();
+                    alert('Ошибка сервера: ' + (errData.error || 'Не удалось сохранить'));
+                }
+            } catch (err) { 
+                console.error(err);
+                alert('Ошибка отправки данных на сервер');
+            }
+        };
+
+        // Форма редактирования знака с каскадным выбором категории
+        window.openEditForm = async function(id, currentTypeId, lat, lng, currentDesc) {
+            if (!signTypesList || signTypesList.length === 0) {
+                await fetchSignTypes();
+            }
+
+            const currentSignObj = signTypesList.find(st => st.id === currentTypeId) || signTypesList[0];
+            const currentCat = currentSignObj ? (currentSignObj.category_name || 'Разное') : 'Разное';
+
+            const categories = [...new Set(signTypesList.map(st => st.category_name || 'Разное'))];
+            let categoryOptions = categories.map(cat => `<option value="${cat}" ${cat === currentCat ? 'selected' : ''}>${cat}</option>`).join('');
+
+            const filteredSigns = signTypesList.filter(st => (st.category_name || 'Разное') === currentCat);
+            let signOptions = filteredSigns.map(st => `<option value="${st.id}" ${st.id === currentTypeId ? 'selected' : ''}>${st.code} - ${st.name}</option>`).join('');
+
+            const popupContent = `
+                <form id="editSignForm">
+                    <h3>Редактировать знак</h3>
+                    <label>Вид (категория) знака:</label>
+                    <select id="editCategorySelect" onchange="updateEditSignTypesDropdown()">${categoryOptions}</select>
+
+                    <label>Конкретный знак:</label>
+                    <select id="editSignTypeId">${signOptions}</select>
+                    
+                    <label>Описание:</label>
+                    <textarea id="editSignDesc">${currentDesc || ''}</textarea>
+                    <button type="button" class="btn btn-primary" onclick="updateSign(${id}, ${lat}, ${lng})">Сохранить изменения</button>
+                </form>
+            `;
+
+            L.popup().setLatLng([lat, lng]).setContent(popupContent).openOn(map);
+        };
+
+        window.updateEditSignTypesDropdown = function() {
+            const selectedCat = document.getElementById('editCategorySelect').value;
+            const signSelect = document.getElementById('editSignTypeId');
+            
+            const filteredSigns = signTypesList.filter(st => (st.category_name || 'Разное') === selectedCat);
+            signSelect.innerHTML = filteredSigns.map(st => `<option value="${st.id}">${st.code} - ${st.name}</option>`).join('');
+        };
+
+        window.updateSign = async function(id, lat, lng) {
+            const sign_type_id = parseInt(document.getElementById('editSignTypeId').value);
+            const description = document.getElementById('editSignDesc').value;
+
+            try {
+                const response = await fetch(`http://localhost:5000/api/signs/${id}`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json', 
+                        'x-user-role': currentUserRole 
+                    },
+                    body: JSON.stringify({ 
+                        sign_type_id: sign_type_id, 
+                        latitude: parseFloat(lat), 
+                        longitude: parseFloat(lng), 
+                        description: description 
+                    })
+                });
+
+                if (response.ok) {
+                    alert('Знак успешно обновлен!');
+                    map.closePopup();
+                    loadSigns();
+                } else {
+                    alert('Ошибка при обновлении');
+                }
+            } catch (err) { console.error(err); }
+        };
+
+        window.deleteSign = async function(id) {
+            if (!confirm('Вы уверены, что хотите удалить знак?')) return;
+
+            try {
+                const response = await fetch(`http://localhost:5000/api/signs/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'x-user-role': currentUserRole }
+                });
+
+                if (response.ok) {
+                    alert('Знак удален!');
+                    map.closePopup();
+                    loadSigns();
+                } else {
+                    alert('Недостаточно прав для удаления');
+                }
+            } catch (err) { console.error(err); }
+        };
+
+        updateAuthUI();
+        fetchSignTypes().then(() => {
+            loadSigns();
+        });
+    </script>
+</body>
+</html>
