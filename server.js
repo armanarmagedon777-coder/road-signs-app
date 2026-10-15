@@ -15,6 +15,22 @@ const pool = new Pool({
     }
 });
 
+// Корневой маршрут (убирает ошибку Cannot GET /)
+app.get('/', (req, res) => {
+    res.json({
+        status: "success",
+        message: "Road Signs Astana API is running!",
+        endpoints: {
+            login: "POST /api/login",
+            signs: "GET /api/signs",
+            signTypes: "GET /api/sign-types",
+            addSign: "POST /api/signs",
+            updateSign: "PUT /api/signs/:id",
+            deleteSign: "DELETE /api/signs/:id"
+        }
+    });
+});
+
 // Проверка ролей (RBAC Middleware)
 const checkRole = (allowedRoles) => {
     return (req, res, next) => {
