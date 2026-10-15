@@ -5,6 +5,9 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Раздача статических файлов фронтенда (HTML, CSS, JS) из корневой папки
+app.use(express.static(__dirname));
 app.use('/images', express.static('images'));
 
 // Подключение к облачной базе данных Neon через переменную окружения
@@ -15,8 +18,13 @@ const pool = new Pool({
     }
 });
 
-// Корневой маршрут (убирает ошибку Cannot GET /)
+// Главная страница отдает index.html (карту и интерфейс)
 app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+
+// Документация API по адресу /api
+app.get('/api', (req, res) => {
     res.json({
         status: "success",
         message: "Road Signs Astana API is running!",
