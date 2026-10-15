@@ -154,7 +154,7 @@
             }
 
             try {
-                const res = await fetch('http://localhost:5000/api/login', {
+                const res = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ role, password })
@@ -180,11 +180,10 @@
 
         async function fetchSignTypes() {
             try {
-                const res = await fetch('http://localhost:5000/api/sign-types');
+                const res = await fetch('/api/sign-types');
                 if (res.ok) {
                     const data = await res.json();
                     if (data && data.length > 0) {
-                        // Сортировка знаков по возрастанию кодов (например, 1.1, 1.2, 2.1, 2.4 ...)
                         data.sort((a, b) => {
                             return a.code.localeCompare(b.code, undefined, { numeric: true });
                         });
@@ -199,7 +198,7 @@
         async function loadSigns() {
             try {
                 markersLayer.clearLayers();
-                const response = await fetch('/api/login', { ... });
+                const response = await fetch('/api/signs');
                 if (!response.ok) return;
                 
                 const signs = await response.json();
@@ -307,7 +306,7 @@
             const description = document.getElementById('signDesc').value;
 
             try {
-                const response = await fetch('http://localhost:5000/api/signs', {
+                const response = await fetch('/api/signs', {
                     method: 'POST',
                     headers: { 
                         'Content-Type': 'application/json', 
@@ -381,7 +380,7 @@
             const description = document.getElementById('editSignDesc').value;
 
             try {
-                const response = await fetch(`http://localhost:5000/api/signs/${id}`, {
+                const response = await fetch(`/api/signs/${id}`, {
                     method: 'PUT',
                     headers: { 
                         'Content-Type': 'application/json', 
@@ -409,7 +408,7 @@
             if (!confirm('Вы уверены, что хотите удалить знак?')) return;
 
             try {
-                const response = await fetch(`http://localhost:5000/api/signs/${id}`, {
+                const response = await fetch(`/api/signs/${id}`, {
                     method: 'DELETE',
                     headers: { 'x-user-role': currentUserRole }
                 });
